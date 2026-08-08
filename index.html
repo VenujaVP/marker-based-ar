@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- A-Frame: the 3D engine (gives us <a-scene>, <a-entity>, <a-camera>). -->
+    <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
+
+    <!-- MindAR: the image tracking — finds your marker every frame. -->
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+    <style> body { margin: 0; } </style>
+
+    <!-- ================================================================
+         THE DIE  — a custom <a-entity die> element.
+         It builds a white cube + 21 dot "pips" (numbers 1..6, opposite
+         faces adding up to 7), then flips + bounces when tapped.
+         Resize the whole thing with ONE number: size.
+         ================================================================ -->
+    <script>
+      AFRAME.registerComponent('die', {
+        // set these from the HTML, e.g.  die="size: 0.3"
+        schema: { size: {default: 0.3}, body: {default: '#f7f7f2'}, pip: {default: '#1a1a1a'} },
+
+        init: function () {
+          var s = this.data.size, h = s / 2;   // h = half the cube's width
+          var r = s * 0.075;                    // radius of each dot
+          var g = s * 0.26;                     // how far dots sit from the centre
+
+          // --- the cube body ---  ('clickable' is what the tap-ray looks for)
+          var box = document.createElement('a-box');
+          box.setAttribute('class', 'clickable');
+          box.setAttribute('width', s); box.setAttribute('height', s); box.setAttribute('depth', s);
+          box.setAttribute('color', this.data.body);
+          box.setAttribute('material', 'roughness: 0.55; metalness: 0.05');
+          this.el.appendChild(box);
+
+          // --- the dots ---  which dots each number shows (u,v in units of g)
+          var L = {
+            1: [[0,0]],
+            2: [[-1,1],[1,-1]],
+            3: [[-1,1],[0,0],[1,-1]],
+            4: [[-1,1],[1,1],[-1,-1],[1,-1]],
+            5: [[-1,1],[1,1],[0,0],[-1,-1],[1,-1]],
+            6: [[-1,1],[1,1],[-1,0],[1,0],[-1,-1],[1,-1]]
+          };
+          // each face: its number + how a dot's (u,v) lands on that face
+          var faces = [
+            [1, function (u,v){ return [ u,  v,  h]; }],  // front  +Z
+            [6, function (u,v){ return [ u,  v, -h]; }],  // back   -Z
+            [3, function (u,v){ return [ h,  v, -u]; }],  // right  +X
+            [4, function (u,v){ return [-h,  v,  u]; }],  // left   -X
+            [5, function (u,v){ return [ u,  h, -v]; }],  // top    +Y
+            [2, function (u,v){ return [ u, -h,  v]; }]   // bottom -Y
+          ];
+          var pip = this.data.pip, el = this.el;
+          faces.forEach(function (f) {
+            L[f[0]].forEach(function (p) {
+              var xyz = f[1](p[0] * g, p[1] * g);
+              var dot = document.createElement('a-sphere');
+              dot.setAttribute('radius', r);
+              dot.setAttribute('color', pip);
+              dot.setAttribute('position', xyz[0] + ' ' + xyz[1] + ' ' + xyz[2]);
+              el.appendChild(dot);
+            });
+          });
+
+          // --- make a tap flip + bounce the die ---
+          var p = this.el.getAttribute('position');
+          this.base = { x: p.x, y: p.y, z: p.z };  // its resting spot
+          this.rx = 0; this.ry = 0; this.busy = false;
+          var self = this;
+          this.el.addEventListener('click', function () { self.roll(); });
+        },
+
+        roll: function () {
+          if (this.busy) return;                 // ignore taps mid-tumble
+          this.busy = true;
+          var el = this.el, s = this.data.size, b = this.base;
+
+          // add a random tumble (a couple of full turns + a quarter or two)
+          this.rx += 360 + 90 * (1 + Math.floor(Math.random() * 3));
+          this.ry += 360 + 90 * (1 + Math.floor(Math.random() * 3));
+          el.setAttribute('animation__flip', {
+            property: 'rotation', to: this.rx + ' ' + this.ry + ' 0',
+            dur: 700, easing: 'easeOutCubic'
+          });
+          // hop up, then back down (dir alternate, twice)
+          el.setAttribute('animation__hop', {
+            property: 'position',
+            from: b.x + ' ' + b.y + ' ' + b.z,
+            to:   b.x + ' ' + (b.y + s * 0.9) + ' ' + b.z,
+            dur: 200, dir: 'alternate', loop: 2, easing: 'easeOutQuad'
+          });
+          var self = this;
+          setTimeout(function () { self.busy = false; }, 720);
+        }
+      });
+    </script>
+  </head>
+
+  <body>
+    <a-scene
+      mindar-image="imageTargetSrc: ./targets/targets.mind;"
+      color-space="sRGB"
+      renderer="colorManagement: true, physicallyCorrectLights"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+    >
+      <!-- a little light so the cube looks solid, not flat -->
+      <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+      <a-entity light="type: directional; intensity: 0.6" position="1 2 1"></a-entity>
+
+      <!-- The AR camera. The <a-entity cursor> is the important new bit:
+           it turns a finger tap into a "click" on the 3D object the tap hits. -->
+      <a-camera position="0 0 0" look-controls="enabled: false">
+        <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable; far: 50"></a-entity>
+      </a-camera>
+
+      <!-- ON THE MARKER: the die. Tune size + position here, then TAP to roll. -->
+      <a-entity mindar-image-target="targetIndex: 0">
+        <a-entity die="size: 0.3" position="0 0 0.15"></a-entity>
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
